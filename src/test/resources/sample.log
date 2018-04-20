@@ -1,0 +1,4 @@
+<123>1 2018-01-01T00:00:00Z localhost myapp 1 - [blah@1234 data="1234\"5678"] msg1
+<123>1 2018-01-01T00:00:18Z localhost myapp 1 - - msg02
+<123>1 2018-01-01T00:01:00Z localhost myapp 1 - - msg003
+<123>1 2018-01-01T01:00:00Z localhost myapp 1 - - msg0004
