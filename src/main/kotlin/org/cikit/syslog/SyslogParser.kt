@@ -1,6 +1,5 @@
 package org.cikit.syslog
 
-import java.nio.BufferOverflowException
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CharsetDecoder
@@ -38,192 +37,29 @@ class SyslogParser : Progressive3() {
     fun msgid() = msgid
     fun sd(id: String, key: String): String? = values[id to key]
 
-    private fun isSpace(b: Byte) = b == ' '.toByte() ||
+    private fun isSpaceOrNl(b: Byte) = b == ' '.toByte() ||
             b == '\t'.toByte() ||
-            b == '\b'.toByte()
+            b == '\b'.toByte() ||
+            b == '\n'.toByte()
 
-    private suspend fun skip(predicate: (Byte) -> Boolean = ::isSpace): Boolean {
-        while (true) {
-            for (i in startIndex until endIndex) {
-                if (!predicate(input(i))) {
-                    startIndex = i
-                    return true
-                }
-            }
-            startIndex = endIndex
-            if (!receive()) return false
-        }
-    }
-
-    private suspend fun skipPrefix(b: Byte): Boolean {
-        while (startIndex >= endIndex) {
-            if (!receive()) return false
-        }
-        if (input(startIndex) == b) {
-            startIndex++
-            return true
-        }
-        return false
-    }
-
-    private suspend fun readByte(): Int {
-        while (startIndex >= endIndex) {
-            if (!receive()) return -1
-        }
-        val b = input(startIndex)
-        startIndex++
-        return b.toInt()
-    }
-
-    private suspend fun readDigits(block: (Int) -> Unit): Boolean {
-        while (startIndex >= endIndex) {
-            if (!receive()) return false
-        }
-        var b = input(startIndex)
-        if (b < '0'.toByte() || b > '9'.toByte()) {
-            return false
-        }
-        block(b.toInt() - '0'.toInt())
-        startIndex++
-        while (true) {
-            for (i in startIndex until endIndex) {
-                b = input(i)
-                if (b < '0'.toByte() || b > '9'.toByte()) {
-                    startIndex = i
-                    return true
-                }
-                block(b.toInt() - '0'.toInt())
-            }
-            if (!receive()) return false
-        }
-    }
-
-    private suspend fun readUntil(predicate: (Byte) -> Boolean = ::isSpace): Boolean {
-        if (startIndex >= endIndex && !receive()) {
-            val dup = dup()
-            dup.limit(startIndex)
-            dup.position(startIndex)
-            return false
-        }
-        for (i in startIndex until endIndex) {
-            val b = input(i)
-            if (predicate(b) || b == '\n'.toByte()) {
-                val dup = dup()
-                dup.limit(i)
-                dup.position(startIndex)
-                startIndex = i
-                return true
-            }
-        }
-        val dup = dup()
-        dup.limit(endIndex)
-        dup.position(startIndex)
-        startIndex = endIndex
-        return false
-    }
-
-    private suspend fun readUntil(tmp: ByteBuffer, predicate: (Byte) -> Boolean = ::isSpace): Boolean {
-        while (tmp.hasRemaining()) {
-            for (i in startIndex until endIndex) {
-                val b = input(i)
-                if (predicate(b) || b == '\n'.toByte()) {
-                    startIndex = i
-                    return true
-                }
-                tmp.put(b)
-                if (!tmp.hasRemaining()) return false
-            }
-            startIndex = endIndex
-            if (!receive()) return false
-        }
-        return false
-    }
-
-    private suspend fun decodeRemaining(dest: CharBuffer, tmp: ByteBuffer, decoder: CharsetDecoder,
-                                        predicate: (Byte) -> Boolean = ::isSpace): Boolean {
-        val result = readUntil(predicate)
-        val dup = dup()
-        val start = dup.position()
-        val limit = dup.limit()
-        val tmpPosition = tmp.position()
-        val tmpRemaining = tmp.remaining()
-        val endOfInput = result && if (limit - start > tmpRemaining) {
-            dup.limit(dup.position() + tmpRemaining)
-            false
-        } else {
-            true
-        }
-        tmp.put(dup)
-        tmp.flip()
-        val cr = decoder.decode(tmp, dest, endOfInput)
-        val consumed = tmp.position() - tmpPosition
-        startIndex = if (consumed <= 0) {
-            startIndex - limit + start
-        } else {
-            startIndex - limit + start + consumed
-        }
-        when {
-            cr.isUnderflow -> {
-                if (endOfInput && !tmp.hasRemaining()) return true
-                if (consumed <= 0) throw IllegalStateException()
-                return false
-            }
-            cr.isOverflow -> {
-                return false
-            }
-            cr.isMalformed -> throw MalformedInputException(cr.length())
-            cr.isUnmappable -> throw UnmappableCharacterException(cr.length())
-            else -> throw IllegalStateException()
-        }
-    }
-
-    private suspend fun decodeUntil(dest: CharBuffer, tmp: ByteBuffer, decoder: CharsetDecoder,
-                                    predicate: (Byte) -> Boolean = ::isSpace): Boolean {
-        while (dest.hasRemaining()) {
-            val result = readUntil(predicate)
-            val dup = dup()
-            val cr = decoder.decode(dup, dest, result)
-            val remaining = dup.remaining()
-            startIndex -= remaining
-            when {
-                cr.isUnderflow -> {
-                    if (remaining > 0) {
-                        if (result) throw IllegalStateException()
-                        if (!dest.hasRemaining()) return false
-                        tmp.clear()
-                        tmp.limit(9)
-                        tmp.put(dup)
-                        startIndex += remaining
-                        tmp.limit(10)
-                        if (decodeRemaining(dest, tmp, decoder, predicate)) return true
-                    } else if (result) {
-                        return true
-                    }
-                }
-                cr.isOverflow -> {
-                    return false
-                }
-                cr.isMalformed -> throw MalformedInputException(cr.length())
-                cr.isUnmappable -> throw UnmappableCharacterException(cr.length())
-                else -> throw IllegalStateException()
-            }
-        }
-
-        return false
-    }
-
-    private suspend fun readField(tmp: ByteBuffer, predicate: (Byte) -> Boolean = ::isSpace): ByteBuffer {
+    private suspend fun readField(tmp: ByteBuffer,
+                                  predicate: (Byte) -> Boolean = ::isSpaceOrNl): ByteBuffer {
         return when {
             readUntil(predicate) -> dup()
             else -> tmp.also {
                 it.clear()
                 it.put(dup())
-                if (!readUntil(it, predicate) && !isClosed()) throw BufferOverflowException()
+                while (true) {
+                    val result = readUntil(predicate)
+                    it.put(dup())
+                    if (result) break
+                }
             }
         }
     }
 
-    private suspend fun readKey(tmp: ByteBuffer, decoder: CharsetDecoder, predicate: (Byte) -> Boolean = ::isSpace): String {
+    private suspend fun readKey(tmp: ByteBuffer, decoder: CharsetDecoder,
+                                predicate: (Byte) -> Boolean = ::isSpaceOrNl): String {
         val field = readField(tmp, predicate)
         val cached = keys[field]
         if (cached != null) return cached
@@ -374,14 +210,22 @@ class SyslogParser : Progressive3() {
             //field kv pairs
             while (true) {
                 if (skipPrefix(']'.toByte())) break
-                val key = readKey(tmp, decoder, { it == '='.toByte() || it == ']'.toByte() })
+                val key = readKey(tmp, decoder) {
+                    it == '='.toByte() ||
+                            it == ']'.toByte() ||
+                            it == '\n'.toByte()
+                }
                 if (skipPrefix('='.toByte())) {
                     decoder.reset()
                     val cb = CharBuffer.allocate(1024)
                     val value = StringBuilder()
                     if (skipPrefix('"'.toByte())) {
                         while (true) {
-                            val result = decodeUntil(cb, tmp, decoder, { it == '\\'.toByte() || it == '"'.toByte() })
+                            val result = decodeUntil(cb, tmp, decoder) {
+                                it == '"'.toByte() ||
+                                        it == '\\'.toByte() ||
+                                        it == '\n'.toByte()
+                            }
                             cb.flip()
                             value.append(cb)
                             cb.clear()
@@ -399,13 +243,30 @@ class SyslogParser : Progressive3() {
                         }
                     } else {
                         while (true) {
-                            val result = decodeUntil(cb, tmp, decoder, { isSpace(it) || it == ']'.toByte() })
+                            val result = decodeUntil(cb, tmp, decoder) {
+                                isSpace(it) ||
+                                        it == ']'.toByte() ||
+                                        it == '\n'.toByte()
+                            }
                             cb.flip()
                             value.append(cb)
                             cb.clear()
                             if (result) break
                             if (isClosed()) return false
                         }
+                    }
+                    cb.clear()
+                    val cr = decoder.flush(cb)
+                    when {
+                        cr.isUnderflow -> {
+                            if (cb.position() > 0) {
+                                cb.flip()
+                                value.append(cb)
+                            }
+                        }
+                        cr.isMalformed -> throw MalformedInputException(cr.length())
+                        cr.isUnmappable -> throw UnmappableCharacterException(cr.length())
+                        else -> throw IllegalStateException()
                     }
                     values[id to key] = value.toString()
                 } else {
