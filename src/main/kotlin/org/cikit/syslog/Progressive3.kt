@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 
 open class Progressive3 {
 
-    private val channel = SynchronousChannel()
+    private val channel = BlockingChannel()
     private var bytesConsumedTotal: Long = 0
     private var input: ByteBuffer = ByteBuffer.allocate(0)
     private var dup: ByteBuffer? = null

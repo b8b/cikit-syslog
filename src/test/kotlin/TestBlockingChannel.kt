@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
 
-class TestProgressive3 {
+class TestBlockingChannel {
 
     class TestParser : Progressive3() {
 

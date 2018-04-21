@@ -4,7 +4,7 @@ import kotlinx.coroutines.experimental.CancellableContinuation
 import kotlinx.coroutines.experimental.suspendCancellableCoroutine
 import java.nio.ByteBuffer
 
-class SynchronousChannel {
+class BlockingChannel {
 
     private var continueFill: CancellableContinuation<Unit>? = null
     private var continueReceive: CancellableContinuation<ByteBuffer?>? = null
