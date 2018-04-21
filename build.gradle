@@ -12,7 +12,7 @@ buildscript {
 }
 
 group = "org.cikit.syslog"
-version = project.properties["VERSION"] ?: "CURRENT"
+version = "CURRENT"
 
 apply plugin: "java"
 apply plugin: "kotlin"
@@ -79,15 +79,15 @@ bintray {
     publications = ["mavenJava"]
     pkg {
         repo = 'cikit'
-        name = 'syslog'
+        name = 'cikit-syslog'
         userOrg = user
         licenses = ['Apache-2.0']
-        vcsUrl = 'https://github.com/b8b/syslog.git'
+        vcsUrl = 'https://github.com/b8b/cikit-syslog.git'
         labels = ['kotlin']
         publicDownloadNumbers = true
         version {
             name = project.version
-            desc = 'Collection of metrics exporters for prometheus'
+            desc = 'rfc5424 syslog implementation'
             vcsTag = "v${project.version}"
         }
     }
