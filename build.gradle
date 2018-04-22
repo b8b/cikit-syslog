@@ -12,7 +12,7 @@ buildscript {
 }
 
 group = "org.cikit.syslog"
-version = "0.3.0"
+version = "0.3.1"
 
 apply plugin: "java"
 apply plugin: "kotlin"
