@@ -170,7 +170,7 @@ open class Progressive3 {
     suspend fun decodeUntil(dest: CharBuffer, tmp: ByteBuffer,
                             decoder: CharsetDecoder,
                             predicate: (Byte) -> Boolean): Boolean {
-        while (dest.hasRemaining()) {
+        while (!isClosed() && dest.hasRemaining()) {
             val result = readUntil(predicate)
             val dup = dup()
             val cr = decoder.decode(dup, dest, result)
