@@ -1,6 +1,7 @@
+import ClosedPath.Companion.closedPath
+import Node.Companion.node
 import org.junit.Test
 import java.awt.Color
-import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.geom.Path2D
 import java.awt.geom.Point2D
@@ -9,68 +10,136 @@ import java.awt.image.BufferedImage
 import java.io.FileOutputStream
 import javax.imageio.ImageIO
 
-operator fun Point2D.plus(other: Point2D): Point2D.Double = Point2D.Double(x + other.x, y + other.y)
-operator fun Point2D.minus(other: Point2D): Point2D.Double = Point2D.Double(x - other.x, y - other.y)
-operator fun Point2D.times(factor: Double): Point2D.Double = Point2D.Double(x * factor, y * factor)
+interface Node {
+    val x: Double
+    val y: Double
 
-fun Path2D.moveTo(p: Point2D) = moveTo(p.x, p.y)
-fun Path2D.lineTo(p: Point2D) = lineTo(p.x, p.y)
-
-fun quadCurve(p1: Point2D, ctrl: Point2D, p2: Point2D) =
-        QuadCurve2D.Double(p1.x, p1.y, ctrl.x, ctrl.y, p2.x, p2.y)
-
-fun logo() {
-    val size = 160.0
-    val height = size * 3.0 / 4.0
-    val a = height * 2 / Math.sqrt(3.0)
-    val rc = 0.05
-
-    val im = BufferedImage(Math.round(size).toInt(), Math.round(size).toInt(), BufferedImage.TYPE_INT_ARGB)
-    val gfx = im.createGraphics()
-    gfx.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-
-    gfx.color = Color.BLACK
-
-    var triangle = Triple(
-            Point2D.Double(height, (size - a) / 2),
-            Point2D.Double(height, (size + a) / 2),
-            Point2D.Double(0.0, a/2)
-    )
-
-    for (i in 0 until 10) {
-        val path = Path2D.Double()
-        listOf(
-                Triple(triangle.first, triangle.second, triangle.third),
-                Triple(triangle.second, triangle.third, triangle.first),
-                Triple(triangle.third, triangle.first, triangle.second)
-        ).forEach {
-            val diff = it.second - it.first
-            val lineStart = it.first + diff * rc
-            val lineEnd = it.second - diff * rc
-            val nextLineStart = it.second + (it.third - it.second) * rc
-            path.moveTo(lineStart)
-            path.lineTo(lineEnd)
-            path.append(quadCurve(lineEnd, it.second, nextLineStart), true)
+    class NodeImpl(override val x: Double, override val y: Double): Node {
+        override fun toString(): String {
+            return String.format("(x=%.02f y=%.02f)", x, y)
         }
-        gfx.draw(path)
-
-        triangle = Triple(
-                triangle.first + (triangle.second - triangle.first) * 0.1,
-                triangle.second + (triangle.third - triangle.second) * 0.1,
-                triangle.third + (triangle.first - triangle.third) * 0.1
-        )
     }
 
-    FileOutputStream("/workspace/cikit-syslog/logo_big.png").use { out ->
-        ImageIO.write(im, "png", out)
+    companion object {
+        fun node(x: Double, y: Double): Node = NodeImpl(x, y)
+        fun node(node: Node) = node(node.x, node.y)
+    }
+
+    fun toPoint2D(): Point2D = Point2D.Double(x, y)
+}
+
+operator fun Node.plus(other: Node) = node(x + other.x, y + other.y)
+operator fun Node.minus(other: Node) = node(x - other.x, y - other.y)
+operator fun Node.times(factor: Double) = node(x * factor, y * factor)
+operator fun Node.div(factor: Double) = node(x / factor, y / factor)
+
+class ClosedPath private constructor(override val x: Double,
+                                     override val y: Double,
+                                     private val nodes: List<ClosedPath>,
+                                     private val index: Int = 0) : Node, Iterable<ClosedPath> {
+
+    companion object {
+        fun closedPath(vararg node: Node): ClosedPath {
+            return closedPath(node.toList())
+        }
+
+        fun closedPath(node: List<Node>): ClosedPath {
+            val nodes = mutableListOf<ClosedPath>()
+            node.forEach { nodes.add(ClosedPath(it.x, it.y, nodes, nodes.size)) }
+            return nodes.first()
+        }
+    }
+
+    fun map(transform: (ClosedPath) -> Node): ClosedPath {
+        val list: List<Node> = (this as Iterable<ClosedPath>).map(transform)
+        return ClosedPath.closedPath(list)
+    }
+
+    override fun iterator(): Iterator<ClosedPath> {
+        var p = 0
+        return generateSequence {
+            return@generateSequence if (p < nodes.size) {
+                nodes[(index + p) % nodes.size].also { p++ }
+            } else {
+                null
+            }
+        }.iterator()
+    }
+
+    fun next() = nodes[if (index + 1 < nodes.size) index + 1 else 0]
+    fun prev() = nodes[if (index - 1 < 0) nodes.size - 1 else index - 1]
+
+    fun toPath2D(action: Path2D.Double.(ClosedPath) -> Unit = Path2D::lineTo): Path2D.Double {
+        val path = Path2D.Double()
+        path.moveTo(prev())
+        for (node in this) {
+            action(path, node)
+        }
+        return path
+    }
+
+    override fun toString(): String {
+        return "ClosedPath[" +
+                joinToString("..") { String.format("(x=%.02f y=%.02f)", x, y) } +
+                "]"
     }
 }
 
+fun Path2D.moveTo(p: Node) = moveTo(p.x, p.y)
+fun Path2D.lineTo(p: Node) = lineTo(p.x, p.y)
+
+fun curve(p1: Node, ctrl: Node, p2: Node) =
+        QuadCurve2D.Double(p1.x, p1.y, ctrl.x, ctrl.y, p2.x, p2.y)
+
 class Logo {
 
+    private fun createLogo(): BufferedImage {
+        val size = 160.0
+        val h = size * 3.0 / 4.0
+        val a = h * 2 / Math.sqrt(3.0)
+        val rc = 0.05
+
+        val im = BufferedImage(Math.round(size).toInt(), Math.round(size).toInt(), BufferedImage.TYPE_INT_ARGB)
+        val gfx = im.createGraphics()
+
+        gfx.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        gfx.color = Color.BLACK
+
+        val firstTriangle = closedPath(
+                node(h, (size - a) / 2),
+                node(h, (size + a) / 2),
+                node(0.0, a / 2)
+        )
+
+        val triangles = generateSequence(firstTriangle) {
+            it.map { node -> node + (node.next() - node) * 0.1 }
+        }
+
+        for (triangle in triangles.take(10)) {
+            val path = triangle.toPath2D { node ->
+                val diff = node - node.prev()
+                val lineStart = node.prev() + diff * rc
+                val lineEnd = node - diff * rc
+                val nextLineStart = node + (node.next() - node) * rc
+                if (node == triangle) moveTo(lineStart)
+                lineTo(lineEnd)
+                append(curve(lineEnd, node, nextLineStart), true)
+            }
+
+            println("drawing triangle with bounds ${path.bounds}")
+
+            gfx.draw(path)
+        }
+
+        return im
+    }
+
     @Test
-    fun testCreateLogo() {
-        logo()
+    fun saveLogo() {
+        val im: BufferedImage = createLogo()
+        FileOutputStream("/workspace/cikit-syslog/logo_big.png").use { out ->
+            ImageIO.write(im, "png", out)
+        }
     }
 
 }
