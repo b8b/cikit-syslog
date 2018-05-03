@@ -8,9 +8,13 @@ import java.nio.charset.UnmappableCharacterException
 
 open class Progressive3 {
 
+    companion object {
+        private val emptyBuffer: ByteBuffer = ByteBuffer.allocate(0)
+    }
+
     private val channel = BlockingChannel()
     private var bytesConsumedTotal: Long = 0
-    private var input: ByteBuffer = ByteBuffer.allocate(0)
+    private var input: ByteBuffer = emptyBuffer
     private var dup: ByteBuffer? = null
 
     protected var startIndex: Int = 0
@@ -25,6 +29,7 @@ open class Progressive3 {
         if (startIndex < endIndex) throw IllegalStateException()
         channel.send(element)
         if (startIndex != endIndex) throw IllegalStateException()
+        input = emptyBuffer
     }
 
     suspend fun close() {
