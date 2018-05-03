@@ -2,6 +2,7 @@ import ClosedPath.Companion.closedPath
 import Node.Companion.node
 import org.junit.Test
 import java.awt.Color
+import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.geom.Path2D
 import java.awt.geom.Point2D
@@ -93,14 +94,10 @@ fun curve(p1: Node, ctrl: Node, p2: Node) =
 
 class Logo {
 
-    private fun createLogo(): BufferedImage {
-        val size = 160.0
+    private fun drawLogo(gfx: Graphics2D, size: Double) {
         val h = size * 3.0 / 4.0
         val a = h * 2 / Math.sqrt(3.0)
         val rc = 0.05
-
-        val im = BufferedImage(Math.round(size).toInt(), Math.round(size).toInt(), BufferedImage.TYPE_INT_ARGB)
-        val gfx = im.createGraphics()
 
         gfx.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         gfx.color = Color.BLACK
@@ -130,13 +127,14 @@ class Logo {
 
             gfx.draw(path)
         }
-
-        return im
     }
 
     @Test
     fun saveLogo() {
-        val im: BufferedImage = createLogo()
+        val size = 160.0
+        val im = BufferedImage(Math.round(size).toInt(), Math.round(size).toInt(), BufferedImage.TYPE_INT_ARGB)
+        val gfx = im.createGraphics()
+        drawLogo(gfx, size)
         FileOutputStream("/workspace/cikit-syslog/logo_big.png").use { out ->
             ImageIO.write(im, "png", out)
         }
