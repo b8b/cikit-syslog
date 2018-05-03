@@ -1,5 +1,8 @@
 import ClosedPath.Companion.closedPath
 import Node.Companion.node
+import de.erichseifert.vectorgraphics2d.VectorGraphics2D
+import de.erichseifert.vectorgraphics2d.svg.SVGProcessor
+import de.erichseifert.vectorgraphics2d.util.PageSize
 import org.junit.Test
 import java.awt.Color
 import java.awt.Graphics2D
@@ -7,9 +10,7 @@ import java.awt.RenderingHints
 import java.awt.geom.Path2D
 import java.awt.geom.Point2D
 import java.awt.geom.QuadCurve2D
-import java.awt.image.BufferedImage
 import java.io.FileOutputStream
-import javax.imageio.ImageIO
 
 interface Node {
     val x: Double
@@ -132,11 +133,10 @@ class Logo {
     @Test
     fun saveLogo() {
         val size = 160.0
-        val im = BufferedImage(Math.round(size).toInt(), Math.round(size).toInt(), BufferedImage.TYPE_INT_ARGB)
-        val gfx = im.createGraphics()
+        val gfx = VectorGraphics2D()
         drawLogo(gfx, size)
-        FileOutputStream("/workspace/cikit-syslog/logo_big.png").use { out ->
-            ImageIO.write(im, "png", out)
+        FileOutputStream("/workspace/cikit-syslog/logo.svg").use { out ->
+            SVGProcessor().getDocument(gfx.commands, PageSize(size, size)).writeTo(out)
         }
     }
 
