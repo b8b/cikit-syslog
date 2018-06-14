@@ -99,6 +99,7 @@ open class Progressive3 {
                 }
                 block(b.toInt() - '0'.toInt())
             }
+            startIndex = endIndex
             if (!receive()) return false
         }
     }
