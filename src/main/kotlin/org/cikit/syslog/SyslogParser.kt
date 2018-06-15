@@ -54,6 +54,7 @@ class SyslogParser : Progressive3() {
                     it.put(dup())
                     if (result) break
                 }
+                it.flip()
             }
         }
     }
@@ -75,9 +76,9 @@ class SyslogParser : Progressive3() {
     private suspend fun parseOffset(sign: Int): ZoneOffset? {
         var hours = 0
         var minutes = 0
-        if (!readDigits({ hours = hours * 10 + it })) return null
+        if (!readDigits { hours = hours * 10 + it }) return null
         if (!skipPrefix(':'.toByte())) return null
-        if (!readDigits({ minutes = minutes * 10 + it })) return null
+        if (!readDigits { minutes = minutes * 10 + it }) return null
         return ZoneOffset.ofHoursMinutes(hours * sign, minutes * sign)
     }
 
@@ -89,7 +90,7 @@ class SyslogParser : Progressive3() {
         var minute = 0
         var second = 0
         var nanos = 0
-        if (!readDigits({ year = year * 10 + it })) {
+        if (!readDigits { year = year * 10 + it }) {
             if (readField(tmp) == nilBytes) {
                 ts = null
                 return true
@@ -97,18 +98,18 @@ class SyslogParser : Progressive3() {
             return false
         }
         if (!skipPrefix('-'.toByte())) return false
-        if (!readDigits({ month = month * 10 + it })) return false
+        if (!readDigits { month = month * 10 + it }) return false
         if (!skipPrefix('-'.toByte())) return false
-        if (!readDigits({ day = day * 10 + it })) return false
+        if (!readDigits { day = day * 10 + it }) return false
         if (!skipPrefix('T'.toByte())) return false
-        if (!readDigits({ hour = hour * 10 + it })) return false
+        if (!readDigits { hour = hour * 10 + it }) return false
         if (!skipPrefix(':'.toByte())) return false
-        if (!readDigits({ minute = minute * 10 + it })) return false
+        if (!readDigits { minute = minute * 10 + it }) return false
         if (!skipPrefix(':'.toByte())) return false
-        if (!readDigits({ second = second * 10 + it })) return false
+        if (!readDigits { second = second * 10 + it }) return false
         if (skipPrefix('.'.toByte())) {
             var digits = 0
-            if (!readDigits({ digits++; nanos = nanos * 10 + it })) return false
+            if (!readDigits { digits++; nanos = nanos * 10 + it }) return false
             if (digits > 9) return false
             for (i in digits.inc() .. 9) nanos *= 10
         }
@@ -135,7 +136,7 @@ class SyslogParser : Progressive3() {
 
         //read pri
         if (!skipPrefix('<'.toByte())) return false
-        if (!readDigits({ priValue = priValue * 10 + it })) return false
+        if (!readDigits { priValue = priValue * 10 + it }) return false
         if (!skipPrefix('>'.toByte())) return false
 
         //read version
@@ -154,8 +155,9 @@ class SyslogParser : Progressive3() {
                 else -> {
                     val bytes = ByteBuffer.allocate(it.remaining())
                     bytes.put(it)
-                    bytes.rewind()
+                    bytes.position(0)
                     val chars = decoder.decode(bytes).toString()
+                    bytes.position(0)
                     cachedHost = bytes to chars
                     cachedHost.second
                 }
@@ -171,8 +173,9 @@ class SyslogParser : Progressive3() {
                 else -> {
                     val bytes = ByteBuffer.allocate(it.remaining())
                     bytes.put(it)
-                    bytes.rewind()
+                    bytes.position(0)
                     val chars = decoder.decode(bytes).toString()
+                    bytes.position(0)
                     cachedApp = bytes to chars
                     cachedApp.second
                 }
@@ -184,7 +187,7 @@ class SyslogParser : Progressive3() {
         proc = let {
             var longValue = 0L
             when {
-                readDigits({ longValue = longValue * 10 + it }) -> longValue
+                readDigits { longValue = longValue * 10 + it } -> longValue
                 readField(tmp) == nilBytes -> null
                 else -> return false
             }
@@ -283,7 +286,7 @@ class SyslogParser : Progressive3() {
     }
 
     suspend fun skipMessage() {
-        val result = skip({ it != '\n'.toByte() })
+        val result = skip { it != '\n'.toByte() }
         if (result) readByte()
     }
 
