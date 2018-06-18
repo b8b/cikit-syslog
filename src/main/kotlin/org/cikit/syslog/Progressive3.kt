@@ -143,14 +143,12 @@ open class Progressive3 {
         val limit = dup.limit()
         val tmpPosition = tmp.position()
         val tmpRemaining = tmp.remaining()
-        val endOfInput = result && if (limit - start > tmpRemaining) {
+        if (limit - start > tmpRemaining) {
             dup.limit(dup.position() + tmpRemaining)
-            false
-        } else {
-            true
         }
         tmp.put(dup)
         tmp.flip()
+        val endOfInput = result && limit - start <= tmpRemaining
         val cr = decoder.decode(tmp, dest, endOfInput)
         val consumed = tmp.position() - tmpPosition
         startIndex = if (consumed <= 0) {
