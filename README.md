@@ -5,7 +5,7 @@
 # rfc 5424 syslog parser
 
 ```kotlin
-import kotlinx.coroutines.experimental.*
+import kotlinx.coroutines.*
 import org.cikit.syslog.SyslogParser
 import java.io.FileInputStream
 import java.nio.*

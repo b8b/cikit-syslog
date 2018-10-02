@@ -1,8 +1,9 @@
 package org.cikit.syslog
 
-import kotlinx.coroutines.experimental.CancellableContinuation
-import kotlinx.coroutines.experimental.suspendCancellableCoroutine
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.nio.ByteBuffer
+import kotlin.coroutines.resume
 
 class BlockingChannel {
 
