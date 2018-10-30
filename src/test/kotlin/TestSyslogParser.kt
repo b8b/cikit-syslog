@@ -1,6 +1,7 @@
-import kotlinx.coroutines.experimental.Unconfined
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.cikit.syslog.Facility
 import org.cikit.syslog.Severity
 import org.cikit.syslog.SyslogParser
@@ -15,7 +16,7 @@ class TestSyslogParser {
     @Test
     fun testBasic() {
         val p = SyslogParser()
-        launch(Unconfined) {
+        GlobalScope.launch(Dispatchers.Unconfined) {
             p.send(ByteBuffer.wrap(javaClass.getResourceAsStream("/sample.log").readBytes()))
             p.close()
         }
@@ -34,7 +35,7 @@ class TestSyslogParser {
     @Test
     fun testDecode() {
         val p = SyslogParser()
-        launch(Unconfined) {
+        GlobalScope.launch(Dispatchers.Unconfined) {
             val input = ByteBuffer.wrap("<123>1 2018-01-01T00:00:00Z localhost myapp 1 - [x@1 test=1\u1234] msg1".toByteArray())
             input.limit(input.remaining() - 7)
             p.send(input)
@@ -62,7 +63,7 @@ class TestSyslogParser {
     @Test
     fun testDecodeMalformed() {
         val p = SyslogParser()
-        launch(Unconfined) {
+        GlobalScope.launch(Dispatchers.Unconfined) {
             val input = ByteBuffer.wrap("<123>1 2018-01-01T00:00:00Z localhost myapp 1 - [x@1 test=1\u1234] msg1".toByteArray())
             input.limit(input.remaining() - 7)
             p.send(input)

@@ -187,7 +187,7 @@ class SyslogParser : Progressive3() {
         proc = let {
             var longValue = 0L
             when {
-                readDigits { longValue = longValue * 10 + it } -> longValue
+                readDigits { d -> longValue = longValue * 10 + d } -> longValue
                 readField(tmp) == nilBytes -> null
                 else -> return false
             }

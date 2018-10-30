@@ -1,13 +1,17 @@
 buildscript {
-    ext.kotlin_version = "1.2.50"
+    ext.kotlin_version = "1.3.0"
 
     repositories {
         jcenter()
+        maven {
+            url "https://plugins.gradle.org/m2/"
+        }
     }
 
     dependencies {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
         classpath "com.jfrog.bintray.gradle:gradle-bintray-plugin:1.7.3"
+        classpath "me.champeau.gradle:jmh-gradle-plugin:0.4.7"
     }
 }
 
@@ -18,6 +22,7 @@ apply plugin: "java"
 apply plugin: "kotlin"
 apply plugin: "maven-publish"
 apply plugin: "com.jfrog.bintray"
+apply plugin: "me.champeau.gradle.jmh"
 
 sourceCompatibility = 1.8
 
@@ -28,17 +33,19 @@ repositories {
     }
 }
 
-dependencies {
-    compile("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
-    compile("org.jetbrains.kotlinx:kotlinx-coroutines-core:0.22")
-    testCompile("junit:junit:4.12")
-    testCompile("de.erichseifert.vectorgraphics2d:VectorGraphics2D:0.13")
+jmh {
+    jmhVersion '1.21'
+    jvmArgs = ['-Djmh.separateClasspathJAR=true']
+    jmhJar {
+        archiveName = 'benchmarks.jar'
+    }
 }
 
-kotlin {
-    experimental {
-        coroutines "enable"
-    }
+dependencies {
+    compile("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    compile("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.0.0")
+    testCompile("junit:junit:4.12")
+    testCompile("de.erichseifert.vectorgraphics2d:VectorGraphics2D:0.13")
 }
 
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {

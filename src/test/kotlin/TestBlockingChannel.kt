@@ -1,6 +1,4 @@
-import kotlinx.coroutines.experimental.Unconfined
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.*
 import org.cikit.syslog.Progressive3
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,7 +51,7 @@ class TestBlockingChannel {
     @Test
     fun testFillFirst() {
         val p = TestParser()
-        launch(Unconfined) {
+        GlobalScope.launch(Dispatchers.Unconfined) {
             fill(p)
         }
         runBlocking {
@@ -65,7 +63,7 @@ class TestBlockingChannel {
     @Test
     fun testParseFirst() {
         val p = TestParser()
-        launch(Unconfined) {
+        GlobalScope.launch(Dispatchers.Unconfined) {
             parse(p)
         }
         runBlocking {
