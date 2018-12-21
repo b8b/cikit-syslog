@@ -5,61 +5,34 @@
 # rfc 5424 syslog parser
 
 ```kotlin
-import kotlinx.coroutines.experimental.*
-import org.cikit.syslog.SyslogParser
+import kotlinx.coroutines.*
+import org.cikit.syslog.*
 import java.io.FileInputStream
 import java.nio.*
 import java.nio.charset.*
 
 fun main(args: Array<String>) = runBlocking<Unit> {
+    val scanner = ProgressiveScanner()
     val p = SyslogParser()
+    val tmp = InMemoryByteChannel()
 
     //feed input
     launch {
         val buffer = ByteBuffer.wrap(FileInputStream("logfile").readBytes())
-        p.send(buffer)
-        p.close()
+        scanner.send(buffer)
+        scanner.close()
     }
 
     //process log records
-    while (p.parse5424()) {
+    while (p.parse5424(scanner)) {
         println("${p.ts()} ${p.host()}")
-        p.skipMessage()
+        if (scanner.readUntil(tmp) { it == '\n'.toByte() }) {
+            scanner.readByte()        
+        }
+        println(tmp.toString(Charsers.UTF_8))
     }
-    assert(p.isClosed())
+    assert(scanner.isClosed())
 
     println("Done!")
 }
-```
-
-# decoding message part
-
-```kotlin
-val tmp = ByteBuffer.allocate(10)
-val cb = CharBuffer.allocate(1024)
-val decoder = Charsets.UTF_8.newDecoder()
-decoder.onMalformedInput(CodingErrorAction.IGNORE)
-decoder.onUnmappableCharacter(CodingErrorAction.REPLACE)
-while (p.parse5424()) {
-    print("${p.ts()} ${p.host()} - ")
-    while (true) {
-        val result = p.decodeUntil(cb, tmp, decoder, { it == '\n'.toByte() })
-        cb.flip()
-        print(cb)
-        cb.clear()
-        if (result) break
-        if (p.isClosed()) {
-            val empty = ByteBuffer.wrap(byteArrayOf())
-            decoder.decode(empty, cb, true)
-            break
-        }
-    }
-    decoder.flush(cb)
-    if (cb.position() > 0) {
-        cb.flip()
-        println(cb)
-    }
-    p.skipMessage()
-}
-assert(p.isClosed())
 ```

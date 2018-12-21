@@ -1,21 +1,18 @@
 package org.cikit.syslog
 
 import java.nio.ByteBuffer
-import java.nio.CharBuffer
-import java.nio.charset.CharsetDecoder
-import java.nio.charset.MalformedInputException
-import java.nio.charset.UnmappableCharacterException
+import java.nio.charset.Charset
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
-class SyslogParser : Progressive3() {
+class SyslogParser {
 
     companion object {
         private val nilBytes = ByteBuffer.wrap(byteArrayOf('-'.toByte())).asReadOnlyBuffer()
     }
 
-    private var cachedHost: Pair<ByteBuffer, String?> = nilBytes to null
-    private var cachedApp: Pair<ByteBuffer, String?> = nilBytes to null
+    private var cachedHost: Pair<ByteBuffer, String> = nilBytes to "-"
+    private var cachedApp: Pair<ByteBuffer, String> = nilBytes to "-"
 
     private val keys = mutableMapOf<ByteBuffer, String>()
     private val values = mutableMapOf<Pair<String, String>, String>()
@@ -37,52 +34,95 @@ class SyslogParser : Progressive3() {
     fun msgid() = msgid
     fun sd(id: String, key: String): String? = values[id to key]
 
+    private fun isSpace(b: Byte) = b == ' '.toByte() ||
+            b == '\t'.toByte() ||
+            b == '\b'.toByte()
+
     private fun isSpaceOrNl(b: Byte) = b == ' '.toByte() ||
             b == '\t'.toByte() ||
             b == '\b'.toByte() ||
             b == '\n'.toByte()
 
-    private suspend fun readField(tmp: ByteBuffer,
-                                  predicate: (Byte) -> Boolean = ::isSpaceOrNl): ByteBuffer {
-        return when {
-            readUntil(predicate) -> dup()
-            else -> tmp.also {
-                it.clear()
-                it.put(dup())
-                while (true) {
-                    val result = readUntil(predicate)
-                    it.put(dup())
-                    if (result) break
-                }
-                it.flip()
-            }
+    private fun ByteBuffer.toString(charset: Charset): String {
+        val bytes = if (hasArray()) {
+            val offset = arrayOffset() + position()
+            array().copyOfRange(offset, offset + remaining())
+        } else {
+            ByteArray(remaining()).also { get(it) }
         }
+        return String(bytes, charset)
     }
 
-    private suspend fun readKey(tmp: ByteBuffer, decoder: CharsetDecoder,
-                                predicate: (Byte) -> Boolean = ::isSpaceOrNl): String {
-        val field = readField(tmp, predicate)
-        val cached = keys[field]
-        if (cached != null) return cached
-        val bytes = ByteBuffer.allocate(field.remaining())
-        bytes.put(field)
-        bytes.rewind()
-        val chars = decoder.decode(bytes) ?: Charsets.UTF_8.decode(bytes)
-        val str = chars.toString()
-        keys[bytes] = str
+    private suspend fun ProgressiveScanner.readCachedField(
+            cached: Pair<ByteBuffer, String>): Pair<ByteBuffer, String> {
+        val buffer = cached.first
+        val bytesToSkip = buffer.remaining()
+        val skippedBytes = skipCommonPrefix(buffer)
+        if (skippedBytes == bytesToSkip) {
+            val delimiter = peekByte()
+            if (delimiter < 0 || isSpaceOrNl(delimiter.toByte())) return cached
+        }
+        if (buffer !== nilBytes) {
+            val capacity = buffer.capacity()
+            if (capacity > skippedBytes) {
+                buffer.compact()
+                buffer.position(skippedBytes)
+                val result = readUntil(buffer, ::isSpaceOrNl)
+                buffer.flip()
+                if (result) return buffer to buffer.toString(Charsets.UTF_8)
+            }
+        }
+        val tmp = InMemoryByteChannel()
+        if (buffer !== nilBytes && buffer.hasRemaining()) tmp.write(buffer)
+        readUntil(tmp, ::isSpaceOrNl)
+        val newBuffer = ByteBuffer.wrap(tmp.toByteArray())
+        return newBuffer to newBuffer.toString(Charsets.UTF_8)
+    }
+
+    private suspend fun ProgressiveScanner.readField(
+            delimiter: (Byte) -> Boolean = ::isSpaceOrNl): ByteBuffer {
+        while (true) {
+            if (!hasAvailable()) {
+                if (!receive()) return ByteBuffer.allocate(0)
+                continue
+            }
+            return readAvailableUntil(delimiter) ?: break
+        }
+        val tmp = InMemoryByteChannel()
+        readUntil(tmp, delimiter)
+        return tmp.asByteBuffer() ?: ByteBuffer.wrap(tmp.toByteArray())
+    }
+
+    private suspend fun ProgressiveScanner.readKey(
+            delimiter: (Byte) -> Boolean = ::isSpaceOrNl): String {
+        val buffer = readField(delimiter)
+        val length = buffer.remaining()
+        if (length == 0) return ""
+        val cached = keys[buffer]
+        if (cached != null) {
+            return cached
+        }
+        val bytes = if (buffer.hasArray()) {
+            val offset = buffer.arrayOffset() + buffer.position()
+            buffer.array().copyOfRange(offset, offset + length)
+        } else {
+            ByteArray(length).also { buffer.get(it) }
+        }
+        val str = String(bytes, Charsets.UTF_8)
+        keys[ByteBuffer.wrap(bytes)] = str
         return str
     }
 
-    private suspend fun parseOffset(sign: Int): ZoneOffset? {
+    private suspend fun ProgressiveScanner.parseOffset(sign: Int): ZoneOffset? {
         var hours = 0
         var minutes = 0
-        if (!readDigits { hours = hours * 10 + it }) return null
-        if (!skipPrefix(':'.toByte())) return null
-        if (!readDigits { minutes = minutes * 10 + it }) return null
+        if (readDigits { hours = hours * 10 + it } == 0L) return null
+        if (!skipByte(':'.toByte())) return null
+        if (readDigits { minutes = minutes * 10 + it } == 0L) return null
         return ZoneOffset.ofHoursMinutes(hours * sign, minutes * sign)
     }
 
-    private suspend fun parseTs(tmp: ByteBuffer): Boolean {
+    private suspend fun ProgressiveScanner.parseTs(): Boolean {
         var year = 0
         var month = 0
         var day = 0
@@ -90,28 +130,28 @@ class SyslogParser : Progressive3() {
         var minute = 0
         var second = 0
         var nanos = 0
-        if (!readDigits { year = year * 10 + it }) {
-            if (readField(tmp) == nilBytes) {
+        if (readDigits { year = year * 10 + it } == 0L) {
+            if (readField() == nilBytes) {
                 ts = null
                 return true
             }
             return false
         }
-        if (!skipPrefix('-'.toByte())) return false
-        if (!readDigits { month = month * 10 + it }) return false
-        if (!skipPrefix('-'.toByte())) return false
-        if (!readDigits { day = day * 10 + it }) return false
-        if (!skipPrefix('T'.toByte())) return false
-        if (!readDigits { hour = hour * 10 + it }) return false
-        if (!skipPrefix(':'.toByte())) return false
-        if (!readDigits { minute = minute * 10 + it }) return false
-        if (!skipPrefix(':'.toByte())) return false
-        if (!readDigits { second = second * 10 + it }) return false
-        if (skipPrefix('.'.toByte())) {
+        if (!skipByte('-'.toByte())) return false
+        if (readDigits { month = month * 10 + it } == 0L) return false
+        if (!skipByte('-'.toByte())) return false
+        if (readDigits { day = day * 10 + it } == 0L) return false
+        if (!skipByte('T'.toByte())) return false
+        if (readDigits { hour = hour * 10 + it } == 0L) return false
+        if (!skipByte(':'.toByte())) return false
+        if (readDigits { minute = minute * 10 + it } == 0L) return false
+        if (!skipByte(':'.toByte())) return false
+        if (readDigits { second = second * 10 + it } == 0L) return false
+        if (skipByte('.'.toByte())) {
             var digits = 0
-            if (!readDigits { digits++; nanos = nanos * 10 + it }) return false
+            if (readDigits { digits++; nanos = nanos * 10 + it } == 0L) return false
             if (digits > 9) return false
-            for (i in digits.inc() .. 9) nanos *= 10
+            for (i in digits.inc()..9) nanos *= 10
         }
         val z = when (readByte()) {
             'Z'.toByte().toInt() -> ZoneOffset.UTC
@@ -123,8 +163,7 @@ class SyslogParser : Progressive3() {
         return true
     }
 
-    suspend fun parse5424(tmp: ByteBuffer = ByteBuffer.allocate(1024),
-                          decoder: CharsetDecoder = Charsets.UTF_8.newDecoder()): Boolean {
+    suspend fun parse5424(input: ProgressiveScanner): Boolean {
         //reset
         priValue = 0
         ts = null
@@ -135,159 +174,108 @@ class SyslogParser : Progressive3() {
         values.clear()
 
         //read pri
-        if (!skipPrefix('<'.toByte())) return false
-        if (!readDigits { priValue = priValue * 10 + it }) return false
-        if (!skipPrefix('>'.toByte())) return false
+        if (!input.skipByte('<'.toByte())) return false
+        if (input.readDigits { priValue = priValue * 10 + it } == 0L) return false
+        if (!input.skipByte('>'.toByte())) return false
 
         //read version
-        if (!skipPrefix('1'.toByte())) return false
-        if (!skip()) return false
+        if (!input.skipByte('1'.toByte())) return false
+        if (input.skip(::isSpace) == 0L) return false
 
         //read ts
-        if (!parseTs(tmp)) return false
-        skip()
+        if (!input.parseTs()) return false
+        input.skip(::isSpace)
 
         //read host
-        host = readField(tmp).let {
-            when (it) {
-                cachedHost.first -> cachedHost.second
-                nilBytes -> null
-                else -> {
-                    val bytes = ByteBuffer.allocate(it.remaining())
-                    bytes.put(it)
-                    bytes.position(0)
-                    val chars = decoder.decode(bytes).toString()
-                    bytes.position(0)
-                    cachedHost = bytes to chars
-                    cachedHost.second
-                }
-            }
-        }
-        skip()
+        cachedHost = input.readCachedField(cachedHost)
+        host = cachedHost.second
+        if (input.skip(::isSpace) == 0L) return false
 
         //read app
-        app = readField(tmp).let {
-            when (it) {
-                cachedApp.first -> cachedApp.second
-                nilBytes -> null
-                else -> {
-                    val bytes = ByteBuffer.allocate(it.remaining())
-                    bytes.put(it)
-                    bytes.position(0)
-                    val chars = decoder.decode(bytes).toString()
-                    bytes.position(0)
-                    cachedApp = bytes to chars
-                    cachedApp.second
-                }
-            }
-        }
-        skip()
+        cachedApp = input.readCachedField(cachedApp)
+        app = cachedApp.second
+        if (input.skip(::isSpace) == 0L) return false
 
         //read proc
         proc = let {
             var longValue = 0L
             when {
-                readDigits { d -> longValue = longValue * 10 + d } -> longValue
-                readField(tmp) == nilBytes -> null
+                input.readDigits { d -> longValue = longValue * 10 + d } > 0 -> longValue
+                input.readField() == nilBytes -> null
                 else -> return false
             }
         }
-        skip()
+        if (input.skip(::isSpace) == 0L) return false
 
         //read msgid
-        msgid = readField(tmp).let {
+        msgid = input.readField().let {
             if (it == nilBytes)
                 null
-            else
-                decoder.decode(it).toString()
+            else {
+                it.toString(Charsets.UTF_8)
+            }
         }
-        skip()
+        if (input.skip(::isSpace) == 0L) return false
 
         //read sd
         var hasSd = false
-        while (skipPrefix('['.toByte())) {
+        while (input.skipByte('['.toByte())) {
             hasSd = true
             //read id
-            val id = readKey(tmp, decoder)
-            skip()
+            val id = input.readKey()
+            input.skip(::isSpace)
             //field kv pairs
             while (true) {
-                if (skipPrefix(']'.toByte())) break
-                val key = readKey(tmp, decoder) {
+                if (input.skipByte(']'.toByte())) break
+                val key = input.readKey {
                     it == '='.toByte() ||
                             it == ']'.toByte() ||
                             it == '\n'.toByte()
                 }
-                if (skipPrefix('='.toByte())) {
-                    decoder.reset()
-                    val cb = CharBuffer.allocate(1024)
-                    val value = StringBuilder()
-                    if (skipPrefix('"'.toByte())) {
+                if (input.skipByte('='.toByte())) {
+                    val tmp = InMemoryByteChannel()
+                    if (input.skipByte('"'.toByte())) {
                         while (true) {
-                            val result = decodeUntil(cb, tmp, decoder) {
+                            input.readUntil(tmp) {
                                 it == '"'.toByte() ||
                                         it == '\\'.toByte() ||
                                         it == '\n'.toByte()
                             }
-                            cb.flip()
-                            value.append(cb)
-                            cb.clear()
-                            if (result) {
-                                val c1 = readByte().toChar()
+                            if (input.hasAvailable()) {
+                                val c1 = input.readByte().toChar()
                                 if (c1 == '"') break
                                 if (c1 != '\\') return false
-                                val c2 = readByte().toChar()
+                                val c2 = input.readByte().toChar()
                                 if (c2 != '\\' && c2 != '"' && c2 != ']') {
-                                    value.append('\\')
+                                    tmp.write('\\'.toInt())
                                 }
-                                value.append(c2)
+                                tmp.write(c2.toInt())
                             }
-                            if (isClosed()) return false
+                            if (input.isClosed()) return false
                         }
                     } else {
                         while (true) {
-                            val result = decodeUntil(cb, tmp, decoder) {
+                            input.readUntil(tmp) {
                                 isSpace(it) ||
                                         it == ']'.toByte() ||
                                         it == '\n'.toByte()
                             }
-                            cb.flip()
-                            value.append(cb)
-                            cb.clear()
-                            if (result) break
-                            if (isClosed()) return false
+                            if (input.hasAvailable()) break
+                            if (input.isClosed()) return false
                         }
                     }
-                    cb.clear()
-                    val cr = decoder.flush(cb)
-                    when {
-                        cr.isUnderflow -> {
-                            if (cb.position() > 0) {
-                                cb.flip()
-                                value.append(cb)
-                            }
-                        }
-                        cr.isMalformed -> throw MalformedInputException(cr.length())
-                        cr.isUnmappable -> throw UnmappableCharacterException(cr.length())
-                        else -> throw IllegalStateException()
-                    }
-                    values[id to key] = value.toString()
+                    values[id to key] = tmp.toString(Charsets.UTF_8)
                 } else {
                     return false
                 }
             }
         }
         if (!hasSd) {
-            if (readField(tmp) != nilBytes) return false
+            if (input.readField() != nilBytes) return false
         }
-        skip()
+        input.skip(::isSpace)
 
         return true
-    }
-
-    suspend fun skipMessage() {
-        val result = skip { it != '\n'.toByte() }
-        if (result) readByte()
     }
 
 }

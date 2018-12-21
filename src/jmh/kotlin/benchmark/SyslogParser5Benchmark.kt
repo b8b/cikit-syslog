@@ -1,9 +1,8 @@
 package benchmark
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.cikit.syslog.ProgressiveScanner
 import org.cikit.syslog.SyslogParser
 import org.junit.Assert
 import org.openjdk.jmh.annotations.*
@@ -15,28 +14,34 @@ import java.util.concurrent.TimeUnit
 @Measurement(iterations = 15)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-open class SyslogParser3Benchmark {
+open class SyslogParser5Benchmark {
+
+    private suspend fun ProgressiveScanner.skipMessage() {
+        skip { it != '\n'.toByte() }
+        readByte()
+    }
 
     @Benchmark
-    open fun syslogParser3() {
+    open fun syslogParser() {
         val buffer: ByteBuffer = setupSampleData()
         val sampleDataLength = buffer.limit()
         for (i in 0 until 100) {
-            val p = SyslogParser()
-            GlobalScope.launch(Dispatchers.Unconfined) {
-                buffer.position(0)
-                buffer.limit(1024)
-                p.send(buffer)
-                buffer.limit(sampleDataLength)
-                buffer.position(1024)
-                p.send(buffer)
-                p.close()
-            }
             runBlocking {
+                val scanner = ProgressiveScanner()
+                val p = SyslogParser()
+                launch {
+                    buffer.position(0)
+                    buffer.limit(1024)
+                    scanner.send(buffer)
+                    buffer.limit(sampleDataLength)
+                    buffer.position(1024)
+                    scanner.send(buffer)
+                    scanner.close()
+                }
                 var counter = 0
-                while (p.parse5424()) {
+                while (p.parse5424(scanner)) {
                     counter++
-                    p.skipMessage()
+                    scanner.skipMessage()
                 }
                 Assert.assertEquals(32, counter)
             }
