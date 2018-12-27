@@ -2,8 +2,13 @@ plugins {
     val kotlinVersion = "1.3.11"
 
     kotlin("jvm") version kotlinVersion
-    `maven-publish`
+    id("org.jetbrains.dokka") version "0.9.17"
     id("me.champeau.gradle.jmh") version "0.4.7"
+
+    signing
+    `maven-publish`
+    id("maven-publish-auth") version "2.0.1"
+
     id("com.jfrog.bintray") version "1.8.4"
 }
 
@@ -35,10 +40,17 @@ dependencies {
 
 val main by sourceSets
 
-val sourcesJar by tasks.registering(Jar::class) {
+val sourcesJar by tasks.creating(Jar::class) {
     group = "build"
     classifier = "sources"
     from(main.allSource)
+}
+
+val dokkaJar by tasks.creating(Jar::class) {
+    group = JavaBasePlugin.DOCUMENTATION_GROUP
+    description = "Assembles Kotlin docs with Dokka"
+    classifier = "javadoc"
+    from(tasks["dokka"])
 }
 
 tasks.named<Jar>("jar") {
@@ -55,12 +67,46 @@ jmh {
 }
 
 publishing {
-    publications {
-        register("mavenJava", MavenPublication::class) {
-            from(components["java"])
-            artifact(sourcesJar.get())
+    repositories {
+        maven {
+            name = "maven-central-cikit"
+            url = uri("https://oss.sonatype.org/service/local/staging/deploy/maven2")
         }
     }
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+            artifact(sourcesJar)
+            artifact(dokkaJar)
+            pom {
+                name.set("cikit-syslog")
+                description.set("rfc5424 syslog implementation")
+                url.set("https://github.com/b8b/cikit-syslog.git")
+                licenses {
+                    license {
+                        name.set("The Apache License, Version 2.0")
+                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("b8b@cikit.org")
+                        name.set("b8b@cikit.org")
+                        email.set("b8b@cikit.org")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:https://github.com/b8b/cikit-syslog.git")
+                    developerConnection.set("scm:git:ssh://github.com/b8b/cikit-syslog.git")
+                    url.set("https://github.com/b8b/cikit-syslog.git")
+                }
+            }
+        }
+    }
+}
+
+signing {
+    sign(publishing.publications["mavenJava"])
 }
 
 bintray {
