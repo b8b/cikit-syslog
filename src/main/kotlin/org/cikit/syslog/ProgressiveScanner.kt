@@ -240,7 +240,7 @@ class ProgressiveScanner {
                 val b = input[i]
                 if (b < '0'.toByte() || b > '9'.toByte()) {
                     input.position(i)
-                    return n + i
+                    return n + i - startIndex
                 }
                 block(b.toInt() - '0'.toInt())
             }
