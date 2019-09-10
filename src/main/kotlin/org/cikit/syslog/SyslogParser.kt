@@ -264,7 +264,7 @@ class SyslogParser {
                             if (input.isClosed()) return false
                         }
                     }
-                    values[id to key] = tmp.toString(Charsets.UTF_8)
+                    values[id.trim() to key.trim()] = tmp.toString(Charsets.UTF_8)
                 } else {
                     return false
                 }
