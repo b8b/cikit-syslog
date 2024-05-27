@@ -1,21 +1,22 @@
 package org.cikit.syslog
 
 import java.nio.ByteBuffer
-import java.nio.charset.Charset
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
 class SyslogParser {
 
     companion object {
-        private val nilBytes = ByteBuffer.wrap(byteArrayOf('-'.toByte())).asReadOnlyBuffer()
+        private val nilBytes = ByteBuffer.wrap(
+            byteArrayOf('-'.code.toByte())
+        ).asReadOnlyBuffer()
     }
 
     private var cachedHost: Pair<ByteBuffer, String> = nilBytes to "-"
     private var cachedApp: Pair<ByteBuffer, String> = nilBytes to "-"
 
-    private val keys = mutableMapOf<ByteBuffer, String>()
-    private val values = mutableMapOf<Pair<String, String>, String>()
+    private val keys = HashMap<ByteBuffer, String>()
+    private val values = HashMap<Pair<String, String>, String>()
 
     private var priValue = -1
     private var host: String? = null
@@ -24,63 +25,83 @@ class SyslogParser {
     private var proc: Long? = null
     private var msgid: String? = null
 
-    fun priValue() = priValue
-    fun facility() = if (priValue < 0) null else Facility.values().getOrNull(priValue shr 3)
-    fun severity() = if (priValue < 0) null else Severity.values().getOrNull(priValue and 0x7)
-    fun ts() = ts
-    fun host() = host
-    fun app() = app
-    fun proc() = proc
-    fun msgid() = msgid
-    fun sd(id: String, key: String): String? = values[id to key]
-
-    private fun isSpace(b: Byte) = b == ' '.toByte() ||
-            b == '\t'.toByte() ||
-            b == '\b'.toByte()
-
-    private fun isSpaceOrNl(b: Byte) = b == ' '.toByte() ||
-            b == '\t'.toByte() ||
-            b == '\b'.toByte() ||
-            b == '\n'.toByte()
-
-    private fun ByteBuffer.toString(charset: Charset): String {
-        val bytes = if (hasArray()) {
-            val offset = arrayOffset() + position()
-            array().copyOfRange(offset, offset + remaining())
-        } else {
-            ByteArray(remaining()).also { get(it) }
-        }
-        return String(bytes, charset)
+    private val tSpace = BooleanArray(256) { i ->
+        i == ' '.code ||
+                i == '\t'.code ||
+                i == '\b'.code
     }
 
+    private val tSpaceOrNl = BooleanArray(256) { i ->
+        i == ' '.code ||
+                i == '\n'.code ||
+                i == '\t'.code ||
+                i == '\b'.code
+    }
+
+    private val tEqOrCloseBracketOrNl = BooleanArray(256) { i ->
+        i == '='.code || i == ']'.code || i == '\n'.code
+    }
+
+    private val tCloseBracketOrSpaceOrNl = BooleanArray(256) { i ->
+        tSpace[i] || i == ']'.code || i == '\n'.code
+    }
+
+    fun priValue() = priValue
+
+    fun facility() = when {
+        priValue < 0 -> null
+        else -> Facility.entries.getOrNull(priValue shr 3)
+    }
+
+    fun severity() = when {
+        priValue < 0 -> null
+        else -> Severity.entries.getOrNull(priValue and 0x7)
+    }
+
+    fun ts() = ts
+
+    fun host() = host
+
+    fun app() = app
+
+    fun proc() = proc
+
+    fun msgid() = msgid
+
+    fun sd(id: String, key: String): String? = values[id to key]
+
     private suspend fun ProgressiveScanner.readCachedField(
-            cached: Pair<ByteBuffer, String>): Pair<ByteBuffer, String> {
+        cached: Pair<ByteBuffer, String>
+    ): Pair<ByteBuffer, String> {
         val buffer = cached.first
         val bytesToSkip = buffer.remaining()
         val skippedBytes = skipCommonPrefix(buffer)
         if (skippedBytes == bytesToSkip) {
             val delimiter = peekByte()
-            if (delimiter < 0 || isSpaceOrNl(delimiter.toByte())) return cached
+            if (delimiter < 0 || tSpaceOrNl[delimiter and 0xFF]) return cached
         }
         if (buffer !== nilBytes) {
             val capacity = buffer.capacity()
             if (capacity > skippedBytes) {
                 buffer.compact()
                 buffer.position(skippedBytes)
-                val result = readUntil(buffer, ::isSpaceOrNl)
+                val result = readUntil(buffer, tSpaceOrNl)
                 buffer.flip()
-                if (result) return buffer to buffer.toString(Charsets.UTF_8)
+                if (result) return buffer to buffer.decodeToString()
             }
         }
         val tmp = InMemoryByteChannel()
-        if (buffer !== nilBytes && buffer.hasRemaining()) tmp.write(buffer)
-        readUntil(tmp, ::isSpaceOrNl)
+        if (buffer !== nilBytes && buffer.hasRemaining()) {
+            tmp.write(buffer)
+        }
+        readUntil(tmp, tSpaceOrNl)
         val newBuffer = ByteBuffer.wrap(tmp.toByteArray())
-        return newBuffer to newBuffer.toString(Charsets.UTF_8)
+        return newBuffer to newBuffer.decodeToString()
     }
 
     private suspend fun ProgressiveScanner.readField(
-            delimiter: (Byte) -> Boolean = ::isSpaceOrNl): ByteBuffer {
+        delimiter: BooleanArray = tSpaceOrNl
+    ): ByteBuffer {
         while (true) {
             if (!hasAvailable()) {
                 if (!receive()) return ByteBuffer.allocate(0)
@@ -94,7 +115,8 @@ class SyslogParser {
     }
 
     private suspend fun ProgressiveScanner.readKey(
-            delimiter: (Byte) -> Boolean = ::isSpaceOrNl): String {
+        delimiter: BooleanArray = tSpaceOrNl
+    ): String {
         val buffer = readField(delimiter)
         val length = buffer.remaining()
         if (length == 0) return ""
@@ -113,12 +135,14 @@ class SyslogParser {
         return str
     }
 
-    private suspend fun ProgressiveScanner.parseOffset(sign: Int): ZoneOffset? {
+    private suspend fun ProgressiveScanner.parseOffset(
+        sign: Int
+    ): ZoneOffset? {
         var hours = 0
         var minutes = 0
-        if (readDigits { hours = hours * 10 + it } == 0L) return null
-        if (!skipByte(':'.toByte())) return null
-        if (readDigits { minutes = minutes * 10 + it } == 0L) return null
+        if (!readInt { v -> hours = v }) return null
+        if (!skipByte(':'.code.toByte())) return null
+        if (!readInt { v -> minutes = v }) return null
         return ZoneOffset.ofHoursMinutes(hours * sign, minutes * sign)
     }
 
@@ -130,33 +154,35 @@ class SyslogParser {
         var minute = 0
         var second = 0
         var nanos = 0
-        if (readDigits { year = year * 10 + it } == 0L) {
+        if (!readInt { v -> year = v }) {
             if (readField() == nilBytes) {
                 ts = null
                 return true
             }
             return false
         }
-        if (!skipByte('-'.toByte())) return false
-        if (readDigits { month = month * 10 + it } == 0L) return false
-        if (!skipByte('-'.toByte())) return false
-        if (readDigits { day = day * 10 + it } == 0L) return false
-        if (!skipByte('T'.toByte())) return false
-        if (readDigits { hour = hour * 10 + it } == 0L) return false
-        if (!skipByte(':'.toByte())) return false
-        if (readDigits { minute = minute * 10 + it } == 0L) return false
-        if (!skipByte(':'.toByte())) return false
-        if (readDigits { second = second * 10 + it } == 0L) return false
-        if (skipByte('.'.toByte())) {
+        if (!skipByte('-'.code.toByte())) return false
+        if (!readInt { v -> month = v }) return false
+        if (!skipByte('-'.code.toByte())) return false
+        if (!readInt { v -> day = v }) return false
+        if (!skipByte('T'.code.toByte())) return false
+        if (!readInt { v -> hour = v }) return false
+        if (!skipByte(':'.code.toByte())) return false
+        if (!readInt { v -> minute = v }) return false
+        if (!skipByte(':'.code.toByte())) return false
+        if (!readInt { v -> second = v }) return false
+        if (skipByte('.'.code.toByte())) {
             var digits = 0
-            if (readDigits { digits++; nanos = nanos * 10 + it } == 0L) return false
+            if (readDigits { digits++; nanos = nanos * 10 + it } == 0L) {
+                return false
+            }
             if (digits > 9) return false
             for (i in digits.inc()..9) nanos *= 10
         }
         val z = when (readByte()) {
-            'Z'.toByte().toInt() -> ZoneOffset.UTC
-            '+'.toByte().toInt() -> parseOffset(1) ?: return false
-            '-'.toByte().toInt() -> parseOffset(-1) ?: return false
+            'Z'.code.toByte().toInt() -> ZoneOffset.UTC
+            '+'.code.toByte().toInt() -> parseOffset(1) ?: return false
+            '-'.code.toByte().toInt() -> parseOffset(-1) ?: return false
             else -> return false
         }
         ts = OffsetDateTime.of(year, month, day, hour, minute, second, nanos, z)
@@ -174,72 +200,70 @@ class SyslogParser {
         values.clear()
 
         //read pri
-        if (!input.skipByte('<'.toByte())) return false
-        if (input.readDigits { priValue = priValue * 10 + it } == 0L) return false
-        if (!input.skipByte('>'.toByte())) return false
+        if (!input.skipByte('<'.code.toByte())) return false
+        if (!input.readInt { v -> priValue = v }) {
+            return false
+        }
+        if (!input.skipByte('>'.code.toByte())) return false
 
         //read version
-        if (!input.skipByte('1'.toByte())) return false
-        if (input.skip(::isSpace) == 0L) return false
+        if (!input.skipByte('1'.code.toByte())) return false
+        if (input.skip(tSpace) == 0L) return false
 
         //read ts
         if (!input.parseTs()) return false
-        input.skip(::isSpace)
+        input.skip(tSpace)
 
         //read host
         cachedHost = input.readCachedField(cachedHost)
         host = cachedHost.second
-        if (input.skip(::isSpace) == 0L) return false
+        if (input.skip(tSpace) == 0L) return false
 
         //read app
         cachedApp = input.readCachedField(cachedApp)
         app = cachedApp.second
-        if (input.skip(::isSpace) == 0L) return false
+        if (input.skip(tSpace) == 0L) return false
 
         //read proc
         proc = let {
             var longValue = 0L
             when {
-                input.readDigits { d -> longValue = longValue * 10 + d } > 0 -> longValue
+                input.readLong { v -> longValue = v } -> longValue
                 input.readField() == nilBytes -> null
                 else -> return false
             }
         }
-        if (input.skip(::isSpace) == 0L) return false
+        if (input.skip(tSpace) == 0L) return false
 
         //read msgid
         msgid = input.readField().let {
             if (it == nilBytes)
                 null
             else {
-                it.toString(Charsets.UTF_8)
+                it.decodeToString()
             }
         }
-        if (input.skip(::isSpace) == 0L) return false
+        if (input.skip(tSpace) == 0L) return false
 
         //read sd
         var hasSd = false
-        while (input.skipByte('['.toByte())) {
+        while (input.skipByte('['.code.toByte())) {
             hasSd = true
             //read id
             val id = input.readKey()
-            input.skip(::isSpace)
+            input.skip(tSpace)
             //field kv pairs
             while (true) {
-                if (input.skipByte(']'.toByte())) break
-                val key = input.readKey {
-                    it == '='.toByte() ||
-                            it == ']'.toByte() ||
-                            it == '\n'.toByte()
-                }
-                if (input.skipByte('='.toByte())) {
+                if (input.skipByte(']'.code.toByte())) break
+                val key = input.readKey(tEqOrCloseBracketOrNl)
+                if (input.skipByte('='.code.toByte())) {
                     val tmp = InMemoryByteChannel()
-                    if (input.skipByte('"'.toByte())) {
+                    if (input.skipByte('"'.code.toByte())) {
                         while (true) {
                             input.readUntil(tmp) {
-                                it == '"'.toByte() ||
-                                        it == '\\'.toByte() ||
-                                        it == '\n'.toByte()
+                                it == '"'.code.toByte() ||
+                                        it == '\\'.code.toByte() ||
+                                        it == '\n'.code.toByte()
                             }
                             if (input.hasAvailable()) {
                                 val c1 = input.readByte().toChar()
@@ -247,24 +271,21 @@ class SyslogParser {
                                 if (c1 != '\\') return false
                                 val c2 = input.readByte().toChar()
                                 if (c2 != '\\' && c2 != '"' && c2 != ']') {
-                                    tmp.write('\\'.toInt())
+                                    tmp.write('\\'.code)
                                 }
-                                tmp.write(c2.toInt())
+                                tmp.write(c2.code)
                             }
                             if (input.isClosed()) return false
                         }
                     } else {
                         while (true) {
-                            input.readUntil(tmp) {
-                                isSpace(it) ||
-                                        it == ']'.toByte() ||
-                                        it == '\n'.toByte()
-                            }
+                            input.readUntil(tmp, tCloseBracketOrSpaceOrNl)
                             if (input.hasAvailable()) break
                             if (input.isClosed()) return false
                         }
                     }
-                    values[id.trim() to key.trim()] = tmp.toString(Charsets.UTF_8)
+                    values[id.trim() to key.trim()] =
+                        tmp.toString(Charsets.UTF_8)
                 } else {
                     return false
                 }
@@ -273,7 +294,7 @@ class SyslogParser {
         if (!hasSd) {
             if (input.readField() != nilBytes) return false
         }
-        input.skip(::isSpace)
+        input.skip(tSpace)
 
         return true
     }

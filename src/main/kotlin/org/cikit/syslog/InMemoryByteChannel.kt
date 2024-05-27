@@ -59,7 +59,13 @@ class InMemoryByteChannel : SeekableByteChannel {
         return bytesCopied
     }
 
-    private fun read0(dst: ByteArray, dstOffset: Int, idx: Int, offset: Int, length: Int) {
+    private fun read0(
+        dst: ByteArray,
+        dstOffset: Int,
+        idx: Int,
+        offset: Int,
+        length: Int
+    ) {
         val src = buffers[idx]
         if (src == null) {
             dst.fill(0, dstOffset, length)
@@ -164,7 +170,9 @@ class InMemoryByteChannel : SeekableByteChannel {
         numberOfBuffers = numberOfBuffers shl 1
         while (newCapacity > numberOfBuffers * BLOCK_SIZE) {
             numberOfBuffers = numberOfBuffers shl 1
-            if (numberOfBuffers > Integer.MAX_VALUE) throw IllegalStateException()
+            if (numberOfBuffers > Integer.MAX_VALUE) {
+                throw IllegalStateException()
+            }
         }
         buffers = buffers.copyOf(numberOfBuffers.toInt())
     }
@@ -181,7 +189,9 @@ class InMemoryByteChannel : SeekableByteChannel {
             var newCapacity = dst.size shl 1
             while (offset + length > newCapacity) {
                 newCapacity = newCapacity shl 1
-                if (newCapacity > BLOCK_SIZE) throw IllegalArgumentException()
+                if (newCapacity > BLOCK_SIZE) {
+                    throw IllegalArgumentException()
+                }
             }
             val newByteArray = dst.copyOf(newCapacity)
             src.get(newByteArray, offset, length)
@@ -232,7 +242,13 @@ class InMemoryByteChannel : SeekableByteChannel {
         return bytesCopied
     }
 
-    private fun write0(src: ByteArray, srcOffset: Int, idx: Int, offset: Int, length: Int) {
+    private fun write0(
+        src: ByteArray,
+        srcOffset: Int,
+        idx: Int,
+        offset: Int,
+        length: Int
+    ) {
         val dst = buffers[idx]
         if (dst == null) {
             val newByteArray = ByteArray(BLOCK_SIZE)
@@ -307,7 +323,9 @@ class InMemoryByteChannel : SeekableByteChannel {
                 var newCapacity = buffer.size shl 1
                 while (offset0 >= newCapacity) {
                     newCapacity = newCapacity shl 1
-                    if (newCapacity > BLOCK_SIZE) throw IllegalArgumentException()
+                    if (newCapacity > BLOCK_SIZE) {
+                        throw IllegalArgumentException()
+                    }
                 }
                 val newByteArray = buffer.copyOf(newCapacity)
                 newByteArray[offset0] = b.toByte()
@@ -335,7 +353,9 @@ class InMemoryByteChannel : SeekableByteChannel {
                 var newCapacity = buffer.size shl 1
                 while (offset0 >= newCapacity) {
                     newCapacity = newCapacity shl 1
-                    if (newCapacity > BLOCK_SIZE) throw IllegalArgumentException()
+                    if (newCapacity > BLOCK_SIZE) {
+                        throw IllegalArgumentException()
+                    }
                 }
                 val newByteArray = buffer.copyOf(newCapacity)
                 newByteArray[offset0] = b
@@ -385,7 +405,9 @@ class InMemoryByteChannel : SeekableByteChannel {
             val dst = buffers[idx]
             if (dst != null) {
                 var length = dst.size - offset
-                if (size - this.size < length) length = (size - this.size).toInt()
+                if (size - this.size < length) {
+                    length = (size - this.size).toInt()
+                }
                 dst.fill(0, offset, length)
             }
         }

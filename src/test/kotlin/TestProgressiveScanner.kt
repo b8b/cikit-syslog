@@ -1,14 +1,14 @@
+import org.junit.jupiter.api.Test
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.cikit.syslog.InMemoryByteChannel
 import org.cikit.syslog.ProgressiveScanner
-import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 
 class TestProgressiveScanner {
 
-    private fun isNl(b: Byte) = b == '\n'.toByte()
+    private fun isNl(b: Byte) = b == '\n'.code.toByte()
 
     private fun ByteBuffer.contentToString() = toString(Charsets.UTF_8)
 

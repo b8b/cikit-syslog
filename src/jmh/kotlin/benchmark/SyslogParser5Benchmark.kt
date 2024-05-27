@@ -4,7 +4,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.cikit.syslog.ProgressiveScanner
 import org.cikit.syslog.SyslogParser
-import org.junit.Assert
+import org.junit.jupiter.api.Assertions.*
 import org.openjdk.jmh.annotations.*
 import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 open class SyslogParser5Benchmark {
 
     private suspend fun ProgressiveScanner.skipMessage() {
-        skip { it != '\n'.toByte() }
+        skip { it != '\n'.code.toByte() }
         readByte()
     }
 
@@ -43,7 +43,7 @@ open class SyslogParser5Benchmark {
                     counter++
                     scanner.skipMessage()
                 }
-                Assert.assertEquals(32, counter)
+                assertEquals(32, counter)
             }
         }
     }

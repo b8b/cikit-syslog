@@ -39,8 +39,11 @@ class ProgressiveDecoder(val charset: Charset = Charsets.UTF_8) {
         tmp.clear()
     }
 
-    private fun decodeTmp(src: ByteBuffer, dest: CharBuffer,
-                          endOfInput: Boolean): Int {
+    private fun decodeTmp(
+        src: ByteBuffer,
+        dest: CharBuffer,
+        endOfInput: Boolean
+    ): Int {
         val tmpPosition = tmp.position()
         if (tmpPosition == 0) return 0
         val startIndex = src.position()
@@ -84,8 +87,11 @@ class ProgressiveDecoder(val charset: Charset = Charsets.UTF_8) {
         return consumedAlready
     }
 
-    private fun decode(src: ByteBuffer, dest: CharBuffer,
-                       endOfInput: Boolean): Int {
+    private fun decode(
+        src: ByteBuffer,
+        dest: CharBuffer,
+        endOfInput: Boolean
+    ): Int {
         val consumedAlready = decodeTmp(src, dest, endOfInput)
         if (!dest.hasRemaining()) return consumedAlready
         val startIndex = src.position()
@@ -115,8 +121,11 @@ class ProgressiveDecoder(val charset: Charset = Charsets.UTF_8) {
         return consumed
     }
 
-    fun decodeAvailable(src: ProgressiveScanner, dest: CharBuffer,
-                        maxNumberOfBytes: Int = -1): Int {
+    fun decodeAvailable(
+        src: ProgressiveScanner,
+        dest: CharBuffer,
+        maxNumberOfBytes: Int = -1
+    ): Int {
         val remaining = dest.remaining()
         if (remaining <= 0) return 0
         val buffer = src.peekAvailable(max = maxNumberOfBytes) ?: return 0
@@ -125,9 +134,12 @@ class ProgressiveDecoder(val charset: Charset = Charsets.UTF_8) {
         return consumed
     }
 
-    fun decodeAvailableUntil(src: ProgressiveScanner, dest: CharBuffer,
-                             predicate: (Byte) -> Boolean,
-                             maxNumberOfBytes: Int = -1): Int {
+    fun decodeAvailableUntil(
+        src: ProgressiveScanner,
+        dest: CharBuffer,
+        predicate: (Byte) -> Boolean,
+        maxNumberOfBytes: Int = -1
+    ): Int {
         val remaining = dest.remaining()
         if (remaining <= 0) return 0
         val found = src.peekAvailableUntil(predicate, max = maxNumberOfBytes)
@@ -139,7 +151,10 @@ class ProgressiveDecoder(val charset: Charset = Charsets.UTF_8) {
         return decodeAvailable(src, dest, maxNumberOfBytes)
     }
 
-    suspend fun decodeUntilEnd(src: ProgressiveScanner, dest: CharBuffer): Int {
+    suspend fun decodeUntilEnd(
+        src: ProgressiveScanner,
+        dest: CharBuffer
+    ): Int {
         var n = 0
         while (true) {
             val decoded = decodeAvailable(src, dest)
@@ -153,8 +168,11 @@ class ProgressiveDecoder(val charset: Charset = Charsets.UTF_8) {
         return n
     }
 
-    suspend fun decodeUntil(src: ProgressiveScanner, dest: CharBuffer,
-                            predicate: (Byte) -> Boolean): Int {
+    suspend fun decodeUntil(
+        src: ProgressiveScanner,
+        dest: CharBuffer,
+        predicate: (Byte) -> Boolean
+    ): Int {
         var n = 0
         while (true) {
             val decoded = decodeAvailableUntil(src, dest, predicate)

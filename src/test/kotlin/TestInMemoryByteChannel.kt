@@ -1,7 +1,6 @@
 import org.cikit.syslog.InMemoryByteChannel
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
 
 class TestInMemoryByteChannel {

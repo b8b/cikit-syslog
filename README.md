@@ -26,7 +26,7 @@ fun main(args: Array<String>) = runBlocking<Unit> {
     //process log records
     while (p.parse5424(scanner)) {
         println("${p.ts()} ${p.host()}")
-        if (scanner.readUntil(tmp) { it == '\n'.toByte() }) {
+        if (scanner.readUntil(tmp) { it == '\n'.code.toByte() }) {
             scanner.readByte()        
         }
         println(tmp.toString(Charsers.UTF_8))

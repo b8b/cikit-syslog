@@ -64,7 +64,10 @@ class ProgressiveScanner {
         return result
     }
 
-    fun readAvailableUntil(predicate: (Byte) -> Boolean, max: Int = -1): ByteBuffer? {
+    fun readAvailableUntil(
+        predicate: (Byte) -> Boolean,
+        max: Int = -1
+    ): ByteBuffer? {
         val startIndex = input.position()
         val endIndex = if (max > 0)
             minOf(startIndex + max, input.limit())
@@ -72,6 +75,26 @@ class ProgressiveScanner {
             input.limit()
         for (i in startIndex until endIndex) {
             if (predicate(input[i])) {
+                val result = input.duplicate()
+                input.position(i)
+                result.limit(i)
+                return result
+            }
+        }
+        return null
+    }
+
+    fun readAvailableUntil(
+        table: BooleanArray,
+        max: Int = -1
+    ): ByteBuffer? {
+        val startIndex = input.position()
+        val endIndex = if (max > 0)
+            minOf(startIndex + max, input.limit())
+        else
+            input.limit()
+        for (i in startIndex until endIndex) {
+            if (table[input[i].toInt() and 0xFF]) {
                 val result = input.duplicate()
                 input.position(i)
                 result.limit(i)
@@ -92,7 +115,10 @@ class ProgressiveScanner {
         return result
     }
 
-    fun peekAvailableUntil(predicate: (Byte) -> Boolean, max: Int = -1): ByteBuffer? {
+    fun peekAvailableUntil(
+        predicate: (Byte) -> Boolean,
+        max: Int = -1
+    ): ByteBuffer? {
         val startIndex = input.position()
         val endIndex = if (max > 0)
             minOf(startIndex + max, input.limit())
@@ -123,6 +149,28 @@ class ProgressiveScanner {
             val endIndex = input.limit()
             for (i in startIndex until endIndex) {
                 if (!predicate(input[i])) {
+                    skipped += i - startIndex
+                    input.position(i)
+                    return skipped
+                }
+            }
+            skipped += endIndex - startIndex
+            input.position(endIndex)
+        }
+        return skipped
+    }
+
+    suspend fun skip(table: BooleanArray): Long {
+        var skipped = 0L
+        while (true) {
+            if (!input.hasRemaining()) {
+                if (!receive()) break
+                continue
+            }
+            val startIndex = input.position()
+            val endIndex = input.limit()
+            for (i in startIndex until endIndex) {
+                if (!table[input[i].toInt() and 0xFF]) {
                     skipped += i - startIndex
                     input.position(i)
                     return skipped
@@ -238,13 +286,225 @@ class ProgressiveScanner {
             val endIndex = input.limit()
             for (i in startIndex until endIndex) {
                 val b = input[i]
-                if (b < '0'.toByte() || b > '9'.toByte()) {
+                if (b < '0'.code.toByte() || b > '9'.code.toByte()) {
                     input.position(i)
                     return n + i - startIndex
                 }
-                block(b.toInt() - '0'.toInt())
+                block(b.toInt() - '0'.code)
             }
             n += endIndex - startIndex
+            input.position(endIndex)
+        }
+    }
+
+    suspend fun readInt(block: (Int) -> Unit): Boolean {
+        var result = 0
+        var valid = false
+
+        while (true) {
+            if (!input.hasRemaining()) {
+                if (!receive()) {
+                    if (valid) {
+                        block(result)
+                    }
+                    return valid
+                }
+                continue
+            }
+            val startIndex = input.position()
+            val endIndex = input.limit()
+            for (i in startIndex until endIndex) {
+                val b = input[i]
+                if (b < '0'.code.toByte() || b > '9'.code.toByte()) {
+                    if (!valid) {
+                        return when (b) {
+                            '-'.code.toByte() -> {
+                                readNegativeInt(block, startIndex, endIndex)
+                            }
+                            '+'.code.toByte() -> {
+                                continue
+                            }
+                            else -> false
+                        }
+                    }
+                    input.position(i)
+                    block(result)
+                    return true
+                }
+                if (valid) {
+                    result = result * 10 + b.toInt() - '0'.code
+                } else {
+                    result = b.toInt() - '0'.code
+                    valid = true
+                }
+            }
+            input.position(endIndex)
+        }
+    }
+
+    private suspend fun readNegativeInt(
+        block: (Int) -> Unit,
+        firstStartIndex: Int,
+        firstEndIndex: Int
+    ): Boolean {
+        var result = 0
+        var valid = false
+
+        for (i in firstStartIndex + 1 until firstEndIndex) {
+            val b = input[i]
+            if (b < '0'.code.toByte() || b > '9'.code.toByte()) {
+                if (!valid) {
+                    return false
+                }
+                input.position(i)
+                block(0 - result)
+                return true
+            }
+            if (valid) {
+                result = result * 10 + b.toInt() - '0'.code
+            } else {
+                result = b.toInt() - '0'.code
+                valid = true
+            }
+        }
+
+        input.position(firstEndIndex)
+
+        while (true) {
+            if (!input.hasRemaining()) {
+                if (!receive()) {
+                    if (valid) {
+                        block(0 - result)
+                    }
+                    return valid
+                }
+                continue
+            }
+            val startIndex = input.position()
+            val endIndex = input.limit()
+            for (i in startIndex until endIndex) {
+                val b = input[i]
+                if (b < '0'.code.toByte() || b > '9'.code.toByte()) {
+                    if (!valid) {
+                        return false
+                    }
+                    input.position(i)
+                    block(0 - result)
+                    return true
+                }
+                if (valid) {
+                    result = result * 10 + b.toInt() - '0'.code
+                } else {
+                    result = b.toInt() - '0'.code
+                    valid = true
+                }
+            }
+            input.position(endIndex)
+        }
+    }
+
+    suspend fun readLong(block: (Long) -> Unit): Boolean {
+        var result = 0L
+        var valid = false
+
+        while (true) {
+            if (!input.hasRemaining()) {
+                if (!receive()) {
+                    if (valid) {
+                        block(result)
+                    }
+                    return valid
+                }
+                continue
+            }
+            val startIndex = input.position()
+            val endIndex = input.limit()
+            for (i in startIndex until endIndex) {
+                val b = input[i]
+                if (b < '0'.code.toByte() || b > '9'.code.toByte()) {
+                    if (!valid) {
+                        return when (b) {
+                            '-'.code.toByte() -> {
+                                readNegativeLong(block, startIndex, endIndex)
+                            }
+                            '+'.code.toByte() -> {
+                                continue
+                            }
+                            else -> false
+                        }
+                    }
+                    input.position(i)
+                    block(result)
+                    return true
+                }
+                if (valid) {
+                    result = result * 10L + (b.toInt() - '0'.code)
+                } else {
+                    result = (b.toInt() - '0'.code).toLong()
+                    valid = true
+                }
+            }
+            input.position(endIndex)
+        }
+    }
+
+    private suspend fun readNegativeLong(
+        block: (Long) -> Unit,
+        firstStartIndex: Int,
+        firstEndIndex: Int
+    ): Boolean {
+        var result = 0L
+        var valid = false
+
+        for (i in firstStartIndex + 1 until firstEndIndex) {
+            val b = input[i]
+            if (b < '0'.code.toByte() || b > '9'.code.toByte()) {
+                if (!valid) {
+                    return false
+                }
+                input.position(i)
+                block(0L - result)
+                return true
+            }
+            if (valid) {
+                result = result * 10L + (b.toInt() - '0'.code)
+            } else {
+                result = (b.toInt() - '0'.code).toLong()
+                valid = true
+            }
+        }
+
+        input.position(firstEndIndex)
+
+        while (true) {
+            if (!input.hasRemaining()) {
+                if (!receive()) {
+                    if (valid) {
+                        block(0L - result)
+                    }
+                    return valid
+                }
+                continue
+            }
+            val startIndex = input.position()
+            val endIndex = input.limit()
+            for (i in startIndex until endIndex) {
+                val b = input[i]
+                if (b < '0'.code.toByte() || b > '9'.code.toByte()) {
+                    if (!valid) {
+                        return false
+                    }
+                    input.position(i)
+                    block(0L - result)
+                    return true
+                }
+                if (valid) {
+                    result = result * 10L + (b.toInt() - '0'.code)
+                } else {
+                    result = (b.toInt() - '0'.code).toLong()
+                    valid = true
+                }
+            }
             input.position(endIndex)
         }
     }
@@ -273,8 +533,10 @@ class ProgressiveScanner {
         }
     }
 
-    suspend fun readUntil(dest: WritableByteChannel,
-                          predicate: (Byte) -> Boolean): Boolean {
+    suspend fun readUntil(
+        dest: WritableByteChannel,
+        predicate: (Byte) -> Boolean
+    ): Boolean {
         while (true) {
             val found = readAvailableUntil(predicate)
             if (found != null) {
@@ -290,11 +552,54 @@ class ProgressiveScanner {
         }
     }
 
-    suspend fun readUntil(dest: ByteBuffer, predicate: (Byte) -> Boolean): Boolean {
+    suspend fun readUntil(
+        dest: WritableByteChannel,
+        table: BooleanArray
+    ): Boolean {
+        while (true) {
+            val found = readAvailableUntil(table)
+            if (found != null) {
+                dest.write(found)
+                return true
+            }
+            val buffer = readAvailable()
+            if (buffer == null) {
+                if (!receive()) return false
+                continue
+            }
+            dest.write(buffer)
+        }
+    }
+
+    suspend fun readUntil(
+        dest: ByteBuffer,
+        predicate: (Byte) -> Boolean
+    ): Boolean {
         while (true) {
             val remaining = dest.remaining()
             if (remaining <= 0) return false
             val found = readAvailableUntil(predicate, max = remaining)
+            if (found != null) {
+                dest.put(found)
+                return true
+            }
+            val buffer = readAvailable(max = remaining)
+            if (buffer == null) {
+                if (!receive()) return false
+                continue
+            }
+            dest.put(buffer)
+        }
+    }
+
+    suspend fun readUntil(
+        dest: ByteBuffer,
+        table: BooleanArray
+    ): Boolean {
+        while (true) {
+            val remaining = dest.remaining()
+            if (remaining <= 0) return false
+            val found = readAvailableUntil(table, max = remaining)
             if (found != null) {
                 dest.put(found)
                 return true

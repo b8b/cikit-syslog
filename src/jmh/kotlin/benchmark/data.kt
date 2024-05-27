@@ -10,7 +10,7 @@ fun setupSampleData(): ByteBuffer {
             """<123>1 2018-01-01T01:00:00Z localhost myapp 1 - - msg0004""")
             .forEach { line ->
                 buffer.put(line.toByteArray(Charsets.UTF_8))
-                buffer.put('\n'.toByte())
+                buffer.put('\n'.code.toByte())
             }
     val sampleLength = buffer.position()
     val repeat = buffer.duplicate()

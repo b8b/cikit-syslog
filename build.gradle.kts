@@ -1,15 +1,9 @@
 plugins {
-    val kotlinVersion = "1.3.11"
-
-    kotlin("jvm") version kotlinVersion
-    id("org.jetbrains.dokka") version "0.9.17"
-    id("me.champeau.gradle.jmh") version "0.4.7"
-
-    signing
+    kotlin("jvm") version "2.0.0"
+    id("org.jetbrains.dokka") version "1.9.20"
     `maven-publish`
-    id("maven-publish-auth") version "2.0.1"
 
-    id("com.jfrog.bintray") version "1.8.4"
+    id("me.champeau.jmh") version "0.7.2"
 }
 
 group = "org.cikit.syslog"
@@ -17,52 +11,57 @@ version = project.properties["version"]
         ?.takeUnless { it == "unspecified" } ?: "1.0.0-SNAPSHOT"
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_1_7
-    targetCompatibility = JavaVersion.VERSION_1_7
-}
-
-repositories {
-    jcenter()
-    maven {
-        url = uri("https://dl.bintray.com/kotlin/kotlinx")
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(11))
     }
 }
 
+repositories {
+    mavenCentral()
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+
 dependencies {
-    val jacksonVersion = "2.9.7"
+    api(kotlin("stdlib"))
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.0")
 
-    compile(kotlin("stdlib"))
-    compile("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.0.1")
 
-    testCompile("junit:junit:4.12")
-    testCompile("de.erichseifert.vectorgraphics2d:VectorGraphics2D:0.13")
+    testImplementation(kotlin("test"))
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.1")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.1")
+    testImplementation("de.erichseifert.vectorgraphics2d:VectorGraphics2D:0.13")
 }
 
-val main by sourceSets
-
-val sourcesJar by tasks.creating(Jar::class) {
-    group = "build"
-    classifier = "sources"
-    from(main.allSource)
+dependencyLocking {
+    lockAllConfigurations()
 }
+
+val kotlinSourcesJar by tasks
 
 val dokkaJar by tasks.creating(Jar::class) {
     group = JavaBasePlugin.DOCUMENTATION_GROUP
     description = "Assembles Kotlin docs with Dokka"
-    classifier = "javadoc"
-    from(tasks["dokka"])
+    archiveClassifier = "javadoc"
+    from(tasks["dokkaJavadoc"])
 }
 
-tasks.named<Jar>("jar") {
+val mainJar by tasks.named<Jar>("jar")
+
+tasks.jar {
     dependsOn("generatePomFileForMavenJavaPublication")
     into("META-INF/maven/${project.group}/${project.name}") {
-        from(File(buildDir, "publications/mavenJava"))
+        from(layout.buildDirectory.dir("publications/mavenJava")) {
+            include("pom-default.xml")
+        }
         rename(".*", "pom.xml")
     }
 }
 
 jmh {
-    jmhVersion = "1.21"
+    jmhVersion = "1.37"
     jvmArgs = listOf("-Djmh.separateClasspathJAR=true")
 }
 
@@ -76,32 +75,36 @@ publishing {
     publications {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
-            artifact(sourcesJar)
+            artifact(kotlinSourcesJar)
             artifact(dokkaJar)
+            versionMapping {
+                usage("java-runtime") {
+                    fromResolutionResult()
+                }
+            }
             pom {
-                name.set("cikit-syslog")
-                description.set("rfc5424 syslog implementation")
-                url.set("https://github.com/b8b/cikit-syslog.git")
+                name = "cikit-syslog"
+                description = "rfc5424 syslog implementation"
+                url = "https://github.com/b8b/cikit-syslog.git"
                 licenses {
                     license {
-                        name.set("The Apache License, Version 2.0")
-                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                        name = "The Apache License, Version 2.0"
+                        url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
                     }
                 }
                 developers {
                     developer {
-                        id.set("b8b@cikit.org")
-                        name.set("b8b@cikit.org")
-                        email.set("b8b@cikit.org")
+                        id = "b8b@cikit.org"
+                        name = "b8b@cikit.org"
+                        email = "b8b@cikit.org"
                     }
                 }
                 scm {
-                    connection.set("scm:git:https://github.com/b8b/cikit-syslog.git")
-                    developerConnection.set("scm:git:ssh://github.com/b8b/cikit-syslog.git")
-                    url.set("https://github.com/b8b/cikit-syslog.git")
+                    connection = "scm:git:https://github.com/b8b/cikit-syslog.git"
+                    developerConnection = "scm:git:ssh://github.com/b8b/cikit-syslog.git"
+                    url = "https://github.com/b8b/cikit-syslog.git"
                 }
             }
         }
     }
 }
-

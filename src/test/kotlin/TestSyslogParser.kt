@@ -4,15 +4,15 @@ import org.cikit.syslog.Facility
 import org.cikit.syslog.ProgressiveScanner
 import org.cikit.syslog.Severity
 import org.cikit.syslog.SyslogParser
-import org.junit.Assert.*
-import org.junit.Test
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
 import java.time.OffsetDateTime
 
 class TestSyslogParser {
 
     private suspend fun ProgressiveScanner.skipMessage() {
-        skip { it != '\n'.toByte() }
+        skip { it != '\n'.code.toByte() }
         readByte()
     }
 
@@ -21,7 +21,7 @@ class TestSyslogParser {
         val scanner = ProgressiveScanner()
         val p = SyslogParser()
         launch {
-            scanner.send(ByteBuffer.wrap(javaClass.getResourceAsStream("/sample.log").readBytes()))
+            scanner.send(ByteBuffer.wrap(javaClass.getResourceAsStream("/sample.log")!!.readBytes()))
             scanner.close()
         }
         var counter = 0

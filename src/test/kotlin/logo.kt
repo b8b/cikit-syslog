@@ -3,7 +3,7 @@ import Node.Companion.node
 import de.erichseifert.vectorgraphics2d.VectorGraphics2D
 import de.erichseifert.vectorgraphics2d.svg.SVGProcessor
 import de.erichseifert.vectorgraphics2d.util.PageSize
-import org.junit.Test
+import org.junit.jupiter.api.Test
 import java.awt.Color
 import java.awt.Graphics2D
 import java.awt.RenderingHints
@@ -11,6 +11,8 @@ import java.awt.geom.Path2D
 import java.awt.geom.Point2D
 import java.awt.geom.QuadCurve2D
 import java.io.FileOutputStream
+import kotlin.io.path.Path
+import kotlin.io.path.outputStream
 
 interface Node {
     val x: Double
@@ -135,7 +137,7 @@ class Logo {
         val size = 160.0
         val gfx = VectorGraphics2D()
         drawLogo(gfx, size)
-        FileOutputStream("/workspace/cikit-syslog/logo.svg").use { out ->
+        Path("logo.svg").outputStream().use { out ->
             SVGProcessor().getDocument(gfx.commands, PageSize(size, size)).writeTo(out)
         }
     }
